@@ -1,5 +1,4 @@
-// context/CartContext.js
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState } from "react";
 import { db } from "../firebase/config";
 import {
   collection,
@@ -10,24 +9,29 @@ import {
 } from "firebase/firestore";
 import { toast } from "react-toastify";
 
+// Create Context
 const CartContext = createContext();
 
+// Custom hook
 export const useCart = () => useContext(CartContext);
 
+// Provider
 export const CartProvider = ({ children }) => {
   const [cart, setCart] = useState([]);
   const [availableItems, setAvailableItems] = useState([]);
-
   const [loading, setLoading] = useState(false);
 
+  // ==============================
+  // FETCH AVAILABLE ITEMS
+  // ==============================
   const fetchAvailableItems = async () => {
     setLoading(true);
     try {
       const querySnapshot = await getDocs(collection(db, "availableItems"));
-      const items = [];
-      querySnapshot.forEach((doc) => {
-        items.push({ id: doc.id, ...doc.data() });
-      });
+      const items = querySnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
       setAvailableItems(items);
     } catch (error) {
       toast.error("Error loading items: " + error.message);
@@ -36,131 +40,119 @@ export const CartProvider = ({ children }) => {
     }
   };
 
-  useEffect(() => {
-    fetchAvailableItems();
-  }, []);
-
-  // Add or update item in availableItems
+  // ==============================
+  // ADD OR UPDATE AVAILABLE ITEM
+  // ==============================
   const updateAvailableItem = async (item) => {
     try {
       await setDoc(doc(db, "availableItems", item.id), item);
       await fetchAvailableItems();
-      toast.success("Item updated successfully!");
+      toast.success("Item saved successfully!");
       return true;
     } catch (error) {
-      toast.error("Error updating item: " + error.message);
+      toast.error("Error saving item: " + error.message);
       return false;
     }
   };
 
-  // Delete item from availableItems
+  // ==============================
+  // DELETE AVAILABLE ITEM
+  // ==============================
   const deleteAvailableItem = async (id) => {
-    if (window.confirm("Are you sure you want to delete this item?")) {
-      try {
-        await deleteDoc(doc(db, "availableItems", id));
-        await fetchAvailableItems();
-        toast.success("Item deleted successfully!");
-      } catch (error) {
-        toast.error("Error deleting item: " + error.message);
-      }
+    if (!window.confirm("Are you sure you want to delete this item?")) return;
+
+    try {
+      await deleteDoc(doc(db, "availableItems", id));
+      await fetchAvailableItems();
+      toast.success("Item deleted successfully!");
+    } catch (error) {
+      toast.error("Error deleting item: " + error.message);
     }
   };
 
-  // Load available items from Firestore
-  useEffect(() => {
-    const fetchAvailableItems = async () => {
-      const querySnapshot = await getDocs(collection(db, "availableItems"));
-      const items = [];
-      querySnapshot.forEach((doc) => {
-        items.push({ id: doc.id, ...doc.data() });
-      });
-      setAvailableItems(items);
-    };
-    fetchAvailableItems();
-  }, []);
-
+  // ==============================
+  // CART OPERATIONS
+  // ==============================
   const addToCart = (item) => {
-    setCart((prevCart) => {
-      const existingItem = prevCart.find((cartItem) => cartItem.id === item.id);
-      if (existingItem) {
-        return prevCart.map((cartItem) =>
-          cartItem.id === item.id
-            ? { ...cartItem, quantity: cartItem.quantity + 1 }
-            : cartItem
+    setCart((prev) => {
+      const existing = prev.find((i) => i.id === item.id);
+      if (existing) {
+        return prev.map((i) =>
+          i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i,
         );
       }
-      return [...prevCart, { ...item, quantity: 1 }];
+      return [...prev, { ...item, quantity: 1 }];
     });
   };
 
   const removeFromCart = (id) => {
-    setCart((prevCart) => prevCart.filter((item) => item.id !== id));
+    setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const updateQuantity = (id, newQuantity) => {
-    if (newQuantity < 1) {
+  const updateQuantity = (id, quantity) => {
+    if (quantity < 1) {
       removeFromCart(id);
       return;
     }
-    setCart((prevCart) =>
-      prevCart.map((item) =>
-        item.id === id ? { ...item, quantity: newQuantity } : item
-      )
+    setCart((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, quantity } : item)),
     );
   };
 
-  const clearCart = () => {
-    setCart([]);
-  };
+  const clearCart = () => setCart([]);
 
-  // Add items to availableItems collection
+  // ==============================
+  // ADD ITEMS TO AVAILABLE STOCK
+  // ==============================
   const addToAvailableItems = async (items) => {
     try {
       for (const item of items) {
-        // Check if item already exists
-        const existingItem = availableItems.find(
-          (avItem) => avItem.id === item.id
-        );
+        const existing = availableItems.find((i) => i.id === item.id);
 
-        if (existingItem) {
-          // Update existing item
-          await setDoc(doc(db, "availableItems", item.id), {
-            ...item,
-            quantity: existingItem.quantity + item.quantity,
-          });
-        } else {
-          // Add new item
-          await setDoc(doc(db, "availableItems", item.id), {
-            ...item,
-          });
-        }
+        await setDoc(doc(db, "availableItems", item.id), {
+          ...item,
+          quantity: existing
+            ? existing.quantity + item.quantity
+            : item.quantity,
+        });
       }
-      toast.success("Items added to available stock!");
+      await fetchAvailableItems();
+      toast.success("Stock updated successfully!");
     } catch (error) {
-      toast.error("Error updating available items: " + error.message);
+      toast.error("Error updating stock: " + error.message);
     }
   };
 
+  // ==============================
+  // TOTALS
+  // ==============================
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+
   const totalPrice = cart.reduce(
     (sum, item) => sum + item.price * item.quantity,
-    0
+    0,
   );
 
+  // ==============================
+  // PROVIDER
+  // ==============================
   return (
     <CartContext.Provider
       value={{
         cart,
         availableItems,
+        loading,
+
+        fetchAvailableItems,
+        updateAvailableItem,
+        deleteAvailableItem,
+        addToAvailableItems,
+
         addToCart,
         removeFromCart,
         updateQuantity,
         clearCart,
-        addToAvailableItems,
-        updateAvailableItem,
-        fetchAvailableItems,
 
-        deleteAvailableItem,
         totalItems,
         totalPrice,
       }}

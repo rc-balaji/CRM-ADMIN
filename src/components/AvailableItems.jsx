@@ -1,5 +1,4 @@
-// components/AvailableItems.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Button,
   Table,
@@ -14,13 +13,18 @@ import {
 import { FaEdit, FaTrash, FaPlus, FaSearch } from "react-icons/fa";
 import { motion } from "framer-motion";
 import { useCart } from "../context/CartContext";
-import { toast } from "react-toastify";
 
 const categories = ["morning_food", "lunch", "snacks", "chocolate", "drink"];
 
 const AvailableItems = () => {
-  const { availableItems, loading, updateAvailableItem, deleteAvailableItem } =
-    useCart();
+  const {
+    availableItems,
+    loading,
+    fetchAvailableItems,
+    updateAvailableItem,
+    deleteAvailableItem,
+  } = useCart();
+
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
     id: "",
@@ -32,6 +36,11 @@ const AvailableItems = () => {
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
+
+  // ✅ IMPORTANT FIX — FETCH WHEN PAGE LOADS
+  useEffect(() => {
+    fetchAvailableItems();
+  }, []);
 
   const handleEdit = (item) => {
     setForm(item);
@@ -45,6 +54,7 @@ const AvailableItems = () => {
       price: Number(form.price),
       quantity: Number(form.quantity),
     });
+
     if (success) {
       setShowModal(false);
       setForm({
@@ -92,23 +102,6 @@ const AvailableItems = () => {
         <h2>
           Available Items <Badge bg="primary">{availableItems.length}</Badge>
         </h2>
-        <Button
-          variant="success"
-          onClick={() => {
-            setForm({
-              id: "",
-              name: "",
-              price: "",
-              image: "",
-              quantity: "",
-              category: "morning_food",
-            });
-            setShowModal(true);
-          }}
-        >
-          <FaPlus className="me-2" />
-          Add New Item
-        </Button>
       </div>
 
       <Card className="mb-4 shadow-sm">
@@ -148,10 +141,7 @@ const AvailableItems = () => {
 
           {filteredItems.length === 0 ? (
             <Alert variant="info" className="text-center">
-              No items found.{" "}
-              {searchTerm
-                ? "Try a different search."
-                : "Add some items to get started."}
+              No items found.
             </Alert>
           ) : (
             <Table striped bordered hover responsive>
@@ -178,6 +168,9 @@ const AvailableItems = () => {
                           objectFit: "cover",
                           borderRadius: "5px",
                         }}
+                        onError={(e) =>
+                          (e.target.src = "https://via.placeholder.com/50")
+                        }
                       />
                     </td>
                     <td>{item.name}</td>
@@ -211,7 +204,7 @@ const AvailableItems = () => {
         </Card.Body>
       </Card>
 
-      {/* Add/Edit Modal */}
+      {/* ADD / EDIT MODAL */}
       <Modal show={showModal} onHide={() => setShowModal(false)} centered>
         <Modal.Header closeButton>
           <Modal.Title>{form.id ? "Edit Item" : "Add New Item"}</Modal.Title>
@@ -232,8 +225,6 @@ const AvailableItems = () => {
               <Form.Label>Price (₹)</Form.Label>
               <Form.Control
                 type="number"
-                min="0"
-                step="0.01"
                 value={form.price}
                 onChange={(e) => setForm({ ...form, price: e.target.value })}
                 required
@@ -248,26 +239,12 @@ const AvailableItems = () => {
                 onChange={(e) => setForm({ ...form, image: e.target.value })}
                 required
               />
-              {form.image && (
-                <div className="mt-2">
-                  <img
-                    src={form.image}
-                    alt="Preview"
-                    className="img-thumbnail"
-                    style={{ maxHeight: "100px" }}
-                    onError={(e) => {
-                      e.target.src = "https://via.placeholder.com/150";
-                    }}
-                  />
-                </div>
-              )}
             </Form.Group>
 
             <Form.Group className="mb-3">
               <Form.Label>Quantity</Form.Label>
               <Form.Control
                 type="number"
-                min="0"
                 value={form.quantity}
                 onChange={(e) => setForm({ ...form, quantity: e.target.value })}
                 required
@@ -279,7 +256,6 @@ const AvailableItems = () => {
               <Form.Select
                 value={form.category}
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
-                required
               >
                 {categories.map((cat) => (
                   <option key={cat} value={cat}>
@@ -289,7 +265,7 @@ const AvailableItems = () => {
               </Form.Select>
             </Form.Group>
 
-            <Button type="submit" variant="primary" className="w-100">
+            <Button type="submit" className="w-100">
               {form.id ? "Update Item" : "Add Item"}
             </Button>
           </Form>

@@ -1,0 +1,254 @@
+// components/AvailableItems.jsx
+import React, { useEffect, useState, useContext } from "react";
+import { Button, Table, Badge, Card, Modal, Form } from "react-bootstrap";
+import { FaPlus, FaMinus, FaTrash, FaSave, FaTimes } from "react-icons/fa";
+import { toast } from "react-toastify";
+import { db } from "../firebase/config";
+import { collection, getDocs, addDoc } from "firebase/firestore";
+import { useCart } from "../context/CartContext";
+import { EditModeContext } from "../App";
+
+const categories = ["morning_food", "lunch", "snacks", "chocolate", "drink"];
+
+export default function AvailableItems() {
+  const { editMode } = useContext(EditModeContext);
+  const {
+    availableItems = [],
+    updateAvailableItem,
+    deleteAvailableItem,
+  } = useCart();
+
+  /* ---------------- LOCAL STATE ---------------- */
+  const [localItems, setLocalItems] = useState([]);
+  const [isDirty, setIsDirty] = useState(false);
+
+  /* ---------------- MENU ITEMS ---------------- */
+  const [menuItems, setMenuItems] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [selectedItems, setSelectedItems] = useState({});
+
+  /* ---------------- SYNC CONTEXT → LOCAL ---------------- */
+  useEffect(() => {
+    setLocalItems(availableItems);
+    setIsDirty(false);
+  }, [availableItems]);
+
+  /* ---------------- FETCH MENU ITEMS ---------------- */
+  useEffect(() => {
+    const fetchMenuItems = async () => {
+      const snap = await getDocs(collection(db, "menuItems"));
+      setMenuItems(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    };
+    fetchMenuItems();
+  }, []);
+
+  /* ---------------- LOCAL QTY UPDATE ---------------- */
+  const updateLocalQty = (id, qty) => {
+    setLocalItems((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, quantity: Math.max(0, qty) } : i)),
+    );
+    setIsDirty(true);
+  };
+
+  /* ---------------- SAVE ---------------- */
+  const handleSave = async () => {
+    try {
+      for (const item of localItems) {
+        const original = availableItems.find((i) => i.id === item.id);
+        if (original && original.quantity !== item.quantity) {
+          await updateAvailableItem(item);
+        }
+      }
+      toast.success("Changes saved");
+      setIsDirty(false);
+    } catch {
+      toast.error("Failed to save changes");
+    }
+  };
+
+  /* ---------------- CANCEL ---------------- */
+  const handleCancel = () => {
+    setLocalItems(availableItems);
+    setIsDirty(false);
+  };
+
+  /* ---------------- MULTI SELECT ---------------- */
+  const toggleSelect = (item) => {
+    setSelectedItems((prev) => {
+      const copy = { ...prev };
+      copy[item.id]
+        ? delete copy[item.id]
+        : (copy[item.id] = { ...item, quantity: 1 });
+      return copy;
+    });
+  };
+
+  /* ---------------- BULK ADD (AUTO-LOAD FIX) ---------------- */
+  const handleBulkAdd = async () => {
+    try {
+      const newItems = [];
+
+      for (const item of Object.values(selectedItems)) {
+        const docRef = await addDoc(collection(db, "availableItems"), {
+          name: item.name,
+          price: item.price,
+          image: item.image,
+          category: item.category,
+          quantity: 1,
+        });
+
+        newItems.push({
+          id: docRef.id,
+          ...item,
+          quantity: 1,
+        });
+      }
+
+      // 🔥 INSTANT UI UPDATE (NO REFRESH)
+      setLocalItems((prev) => [...prev, ...newItems]);
+
+      toast.success("Items added");
+      setSelectedItems({});
+      setShowModal(false);
+    } catch {
+      toast.error("Failed to add items");
+    }
+  };
+
+  const imageStyle = { height: "100px", objectFit: "cover" };
+
+  return (
+    <div className="container py-4">
+      {/* HEADER */}
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h4>
+          Available Items <Badge bg="primary">{localItems.length}</Badge>
+        </h4>
+
+        <div className="d-flex gap-2">
+          {editMode && isDirty && (
+            <>
+              <Button variant="success" onClick={handleSave}>
+                <FaSave className="me-1" /> Save
+              </Button>
+              <Button variant="secondary" onClick={handleCancel}>
+                <FaTimes className="me-1" /> Cancel
+              </Button>
+            </>
+          )}
+
+          <Button onClick={() => setShowModal(true)}>
+            <FaPlus className="me-1" /> Add Items
+          </Button>
+        </div>
+      </div>
+
+      {/* CATEGORY TABLES */}
+      {categories.map((cat) => {
+        const catItems = localItems.filter((i) => i.category === cat);
+        if (!catItems.length) return null;
+
+        return (
+          <div key={cat} className="mb-4">
+            <h6 className="text-capitalize">{cat.replace("_", " ")}</h6>
+            <Table bordered hover responsive>
+              <thead>
+                <tr>
+                  <th>Image</th>
+                  <th>Name</th>
+                  <th>Price</th>
+                  {editMode && <th className="text-center">Qty</th>}
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {catItems.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <img src={item.image} style={imageStyle} alt="" />
+                    </td>
+                    <td>{item.name}</td>
+                    <td>₹{item.price}</td>
+
+                    {editMode && (
+                      <td className="text-center">
+                        <div className="d-flex justify-content-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              updateLocalQty(item.id, item.quantity - 1)
+                            }
+                          >
+                            <FaMinus />
+                          </Button>
+                          <Form.Control
+                            value={item.quantity}
+                            style={{ width: 70, textAlign: "center" }}
+                            onChange={(e) =>
+                              updateLocalQty(item.id, +e.target.value)
+                            }
+                          />
+                          <Button
+                            size="sm"
+                            onClick={() =>
+                              updateLocalQty(item.id, item.quantity + 1)
+                            }
+                          >
+                            <FaPlus />
+                          </Button>
+                        </div>
+                      </td>
+                    )}
+
+                    <td>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => deleteAvailableItem(item.id)}
+                      >
+                        <FaTrash />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+        );
+      })}
+
+      {/* ADD MODAL */}
+      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title>Select Menu Items</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className="row">
+            {menuItems.map((item) => (
+              <div className="col-md-3 mb-3" key={item.id}>
+                <Card
+                  onClick={() => toggleSelect(item)}
+                  className={`h-100 ${
+                    selectedItems[item.id] ? "border-primary shadow" : ""
+                  }`}
+                >
+                  <Card.Img src={item.image} style={imageStyle} />
+                  <Card.Body className="text-center">
+                    <strong>{item.name}</strong>
+                    <div className="text-success">₹{item.price}</div>
+                  </Card.Body>
+                </Card>
+              </div>
+            ))}
+          </div>
+
+          {Object.keys(selectedItems).length > 0 && (
+            <Button className="w-100 mt-3" onClick={handleBulkAdd}>
+              Add Selected Items
+            </Button>
+          )}
+        </Modal.Body>
+      </Modal>
+    </div>
+  );
+}
